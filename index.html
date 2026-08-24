@@ -26,6 +26,11 @@
     --amber: #FBBF24;
     --rose: #FB7185;
     --danger: #FF6B6B;
+    --page-start: #0B1220;
+    --page-mid: #151233;
+    --page-end: #1B1030;
+    --panel-radius: 22px;
+    --ui-scale: 1;
   }
   *{box-sizing:border-box;}
   html,body{height:100%;}
@@ -40,7 +45,7 @@
       radial-gradient(circle at 88% 18%, rgba(167,139,250,0.30), transparent 45%),
       radial-gradient(circle at 30% 92%, rgba(251,113,133,0.22), transparent 40%),
       radial-gradient(circle at 80% 85%, rgba(251,191,36,0.18), transparent 45%),
-      linear-gradient(160deg,#0B1220,#151233 45%,#1B1030 100%);
+      linear-gradient(160deg,var(--page-start),var(--page-mid) 45%,var(--page-end) 100%);
     background-attachment:fixed;
     -webkit-tap-highlight-color:transparent;
   }
@@ -82,6 +87,22 @@
   .progress-fill{background:linear-gradient(90deg,var(--cyan),var(--violet));height:100%;border-radius:10px;transition:width .4s ease;}
 
   .toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+
+  .customizer{padding:18px 20px;margin-bottom:18px;display:none;}
+  .customizer.open{display:block;}
+  .customizer-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;}
+  .customizer label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--text-lo);font-weight:600;}
+  .customizer input,.customizer select{width:100%;border:1px solid var(--glass-border);background:rgba(255,255,255,0.08);color:var(--text-hi);border-radius:10px;padding:8px;font:inherit;}
+  .customizer input[type="color"]{height:42px;padding:4px;cursor:pointer;}
+  .customizer select option{color:#111;}
+  .customizer-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap;}
+  .customizer-actions button{border:1px solid var(--glass-border);border-radius:10px;padding:9px 14px;cursor:pointer;font:inherit;color:var(--text-hi);background:rgba(255,255,255,0.1);}
+  .customizer-actions .apply-ui{background:linear-gradient(90deg,var(--cyan),var(--violet));color:#0B1220;border:none;font-weight:700;}
+  .customizer .range-value{font-weight:700;color:var(--cyan);margin-left:5px;}
+  .glass,.app-nav-inner{border-radius:var(--panel-radius);}
+  .wrap{font-size:calc(16px * var(--ui-scale));}
+  body.compact .task{padding:9px 12px;margin-bottom:6px;}
+  body.compact .panel{padding:14px 16px;}
   .toolbar button{
     border:1px solid var(--glass-border);
     background:var(--glass-bg);
@@ -324,7 +345,7 @@
   <div class="header glass">
     <div class="top">
       <div>
-        <h1>A. Aswin's task manager</h1>
+        <h1 id="appTitle">A. Aswin's task manager</h1>
         <div class="date" id="todayLabel"></div>
         <button class="today-jump" id="jumpTodayBtn" style="display:none;">Back to today</button>
       </div>
@@ -343,9 +364,35 @@
   </div>
 
   <div class="toolbar" id="moreSheet" style="display:none;">
+    <button id="customizeBtn">Customize appearance</button>
     <button id="resetDefaultBtn">Reset to default routine</button>
     <button id="uncheckAllBtn">Uncheck all</button>
   </div>
+
+    <section class="customizer glass" id="customizerPanel">
+    <div class="panel-title">Personalize your task manager</div>
+    <div class="customizer-grid">
+      <label>App title<input type="text" id="uiTitle" maxlength="60" value="A. Aswin's task manager"></label>
+      <label>Primary color<input type="color" id="uiPrimary" value="#5EEAD4"></label>
+      <label>Secondary color<input type="color" id="uiSecondary" value="#A78BFA"></label>
+      <label>Text color<input type="color" id="uiText" value="#F3F5FA"></label>
+      <label>Background start<input type="color" id="uiBackgroundStart" value="#0B1220"></label>
+      <label>Background middle<input type="color" id="uiBackgroundMid" value="#151233"></label>
+      <label>Background end<input type="color" id="uiBackgroundEnd" value="#1B1030"></label>
+      <label>Panel transparency <span class="range-value" id="uiGlassValue">9%</span><input type="range" id="uiGlass" min="4" max="24" value="9"></label>
+      <label>Corner roundness <span class="range-value" id="uiRadiusValue">22px</span><input type="range" id="uiRadius" min="0" max="32" value="22"></label>
+      <label>Text scale
+        <select id="uiScale"><option value="0.9">Small</option><option value="1" selected>Normal</option><option value="1.1">Large</option><option value="1.2">Extra large</option></select>
+      </label>
+      <label>Layout density
+        <select id="uiDensity"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select>
+      </label>
+    </div>
+    <div class="customizer-actions">
+      <button type="button" id="resetUiBtn">Reset appearance</button>
+      <button type="button" class="apply-ui" id="saveUiBtn">Save appearance</button>
+    </div>
+  </section>
 
   <div class="panel glass" id="chartPanel" style="display:none;">
     <div class="panel-title">Overall performance</div>
@@ -408,6 +455,38 @@ const STREAK_KEY = "streak";
 const BESTSTREAK_KEY = "best_streak";
 const DAYSTATUS_KEY = "day_status";
 const LEGACY_TASKS_KEY = "tasks";
+const UI_SETTINGS_KEY = "ui_settings_v1";
+
+// Persistent storage: data survives refreshes and reopening this app in the same browser.
+const appStorage = {
+  async get(key) {
+    try {
+      if (window.storage?.get) {
+        const result = await window.storage.get(key, false);
+        if (result?.value != null) return result;
+      }
+    } catch (error) {
+      console.warn("Platform storage read failed; using browser storage.", error);
+    }
+
+    const value = localStorage.getItem(key);
+    return value === null ? null : { value };
+  },
+
+  async set(key, value) {
+    // localStorage writes immediately, so closing or refreshing the tab does not lose changes.
+    localStorage.setItem(key, value);
+
+    try {
+      if (window.storage?.set) {
+        await window.storage.set(key, value, false);
+      }
+    } catch (error) {
+      console.warn("Platform storage write failed; saved in browser storage.", error);
+    }
+  }
+};
+
 
 const DEFAULT_TASKS = [
   {id:"t1", time:"5:00 AM", title:"Wake up", category:"Personal", note:"Start the day", subtasks:[], done:false},
@@ -433,6 +512,81 @@ let selectedDate = new Date();
 let calendarMonth = new Date();
 let perfChartInstance = null;
 
+const DEFAULT_UI_SETTINGS = {
+  title: "A. Aswin's task manager",
+  primary: "#5EEAD4",
+  secondary: "#A78BFA",
+  text: "#F3F5FA",
+  backgroundStart: "#0B1220",
+  backgroundMid: "#151233",
+  backgroundEnd: "#1B1030",
+  glass: 9,
+  radius: 22,
+  scale: "1",
+  density: "comfortable"
+};
+let uiSettings = { ...DEFAULT_UI_SETTINGS };
+
+function applyUiSettings() {
+  const root = document.documentElement.style;
+  root.setProperty("--cyan", uiSettings.primary);
+  root.setProperty("--violet", uiSettings.secondary);
+  root.setProperty("--text-hi", uiSettings.text);
+  root.setProperty("--page-start", uiSettings.backgroundStart);
+  root.setProperty("--page-mid", uiSettings.backgroundMid);
+  root.setProperty("--page-end", uiSettings.backgroundEnd);
+  root.setProperty("--glass-bg", "rgba(255,255,255," + (Number(uiSettings.glass) / 100) + ")");
+  root.setProperty("--panel-radius", String(uiSettings.radius) + "px");
+  root.setProperty("--ui-scale", uiSettings.scale);
+  document.getElementById("appTitle").textContent = uiSettings.title || DEFAULT_UI_SETTINGS.title;
+  document.body.classList.toggle("compact", uiSettings.density === "compact");
+}
+
+function syncUiControls() {
+  document.getElementById("uiTitle").value = uiSettings.title;
+  document.getElementById("uiPrimary").value = uiSettings.primary;
+  document.getElementById("uiSecondary").value = uiSettings.secondary;
+  document.getElementById("uiText").value = uiSettings.text;
+  document.getElementById("uiBackgroundStart").value = uiSettings.backgroundStart;
+  document.getElementById("uiBackgroundMid").value = uiSettings.backgroundMid;
+  document.getElementById("uiBackgroundEnd").value = uiSettings.backgroundEnd;
+  document.getElementById("uiGlass").value = uiSettings.glass;
+  document.getElementById("uiRadius").value = uiSettings.radius;
+  document.getElementById("uiScale").value = uiSettings.scale;
+  document.getElementById("uiDensity").value = uiSettings.density;
+  document.getElementById("uiGlassValue").textContent = uiSettings.glass + "%";
+  document.getElementById("uiRadiusValue").textContent = uiSettings.radius + "px";
+}
+
+async function loadUiSettings() {
+  try {
+    const saved = await appStorage.get(UI_SETTINGS_KEY, false);
+    if (saved?.value) uiSettings = { ...DEFAULT_UI_SETTINGS, ...JSON.parse(saved.value) };
+  } catch (error) {
+    console.warn("Could not load appearance settings.", error);
+  }
+  applyUiSettings();
+  syncUiControls();
+}
+
+async function saveUiSettings() {
+  uiSettings = {
+    title: document.getElementById("uiTitle").value.trim() || DEFAULT_UI_SETTINGS.title,
+    primary: document.getElementById("uiPrimary").value,
+    secondary: document.getElementById("uiSecondary").value,
+    text: document.getElementById("uiText").value,
+    backgroundStart: document.getElementById("uiBackgroundStart").value,
+    backgroundMid: document.getElementById("uiBackgroundMid").value,
+    backgroundEnd: document.getElementById("uiBackgroundEnd").value,
+    glass: document.getElementById("uiGlass").value,
+    radius: document.getElementById("uiRadius").value,
+    scale: document.getElementById("uiScale").value,
+    density: document.getElementById("uiDensity").value
+  };
+  applyUiSettings();
+  await appStorage.set(UI_SETTINGS_KEY, JSON.stringify(uiSettings), false);
+}
+
 function dateKey(d){ return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); }
 function isSameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
 function tasksKeyFor(d){ return "tasks_"+dateKey(d); }
@@ -454,22 +608,22 @@ function computeStreak(){
 
 async function loadState(){
   try{
-    const r = await window.storage.get(DAYSTATUS_KEY, false);
+    const r = await appStorage.get(DAYSTATUS_KEY, false);
     if(r && r.value) dayStatus = JSON.parse(r.value);
   }catch(e){}
   try{
-    const r = await window.storage.get(BESTSTREAK_KEY, false);
+    const r = await appStorage.get(BESTSTREAK_KEY, false);
     if(r && r.value) bestStreak = JSON.parse(r.value);
   }catch(e){}
 
   await loadTasksForDate(selectedDate);
 
   try{
-    const legacy = await window.storage.get(LEGACY_TASKS_KEY, false);
+    const legacy = await appStorage.get(LEGACY_TASKS_KEY, false);
     if(legacy && legacy.value){
       const todayKey = tasksKeyFor(new Date());
       let existing = null;
-      try{ existing = await window.storage.get(todayKey, false); }catch(e){}
+      try{ existing = await appStorage.get(todayKey, false); }catch(e){}
       if(!existing){
         tasks = JSON.parse(legacy.value).map(t => ({...t, subtasks: Array.isArray(t.subtasks) ? t.subtasks : []}));
         await persistTasks();
@@ -478,7 +632,7 @@ async function loadState(){
   }catch(e){}
 
   streak = computeStreak();
-  if(streak > bestStreak){ bestStreak = streak; try{ await window.storage.set(BESTSTREAK_KEY, JSON.stringify(bestStreak), false); }catch(e){} }
+  if(streak > bestStreak){ bestStreak = streak; try{ await appStorage.set(BESTSTREAK_KEY, JSON.stringify(bestStreak), false); }catch(e){} }
   updateHeaderDate();
   render();
   renderCalendar();
@@ -487,7 +641,7 @@ async function loadState(){
 async function loadTasksForDate(d){
   let stored = null;
   try{
-    const r = await window.storage.get(tasksKeyFor(d), false);
+    const r = await appStorage.get(tasksKeyFor(d), false);
     if(r && r.value) stored = JSON.parse(r.value);
   }catch(e){}
   tasks = stored || DEFAULT_TASKS.map(t=>({...t}));
@@ -503,16 +657,16 @@ function updateHeaderDate(){
 }
 
 async function persistTasks(){
-  try{ await window.storage.set(tasksKeyFor(selectedDate), JSON.stringify(tasks), false); }catch(e){}
+  try{ await appStorage.set(tasksKeyFor(selectedDate), JSON.stringify(tasks), false); }catch(e){}
   const done = tasks.filter(t=>t.done).length;
   const total = tasks.length;
   dayStatus[dateKey(selectedDate)] = {done, total};
-  try{ await window.storage.set(DAYSTATUS_KEY, JSON.stringify(dayStatus), false); }catch(e){}
+  try{ await appStorage.set(DAYSTATUS_KEY, JSON.stringify(dayStatus), false); }catch(e){}
   streak = computeStreak();
-  try{ await window.storage.set(STREAK_KEY, JSON.stringify(streak), false); }catch(e){}
+  try{ await appStorage.set(STREAK_KEY, JSON.stringify(streak), false); }catch(e){}
   if(streak > bestStreak){
     bestStreak = streak;
-    try{ await window.storage.set(BESTSTREAK_KEY, JSON.stringify(bestStreak), false); }catch(e){}
+    try{ await appStorage.set(BESTSTREAK_KEY, JSON.stringify(bestStreak), false); }catch(e){}
   }
 }
 
@@ -901,6 +1055,23 @@ document.getElementById("navChart").addEventListener("click", ()=>{
   if(willOpen) renderChart();
   setActiveNav(willOpen ? "navChart" : "navToday");
 });
+document.getElementById("customizeBtn").addEventListener("click", () => {
+  document.getElementById("customizerPanel").classList.toggle("open");
+  syncUiControls();
+});
+document.getElementById("saveUiBtn").addEventListener("click", saveUiSettings);
+["uiGlass", "uiRadius"].forEach(id => {
+  document.getElementById(id).addEventListener("input", event => {
+    document.getElementById(id + "Value").textContent = event.target.value + (id === "uiGlass" ? "%" : "px");
+  });
+});
+document.getElementById("resetUiBtn").addEventListener("click", async () => {
+  uiSettings = { ...DEFAULT_UI_SETTINGS };
+  applyUiSettings();
+  syncUiControls();
+  await appStorage.set(UI_SETTINGS_KEY, JSON.stringify(uiSettings), false);
+});
+
 document.getElementById("navMenu").addEventListener("click", ()=>{
   document.getElementById("calendar").classList.remove("open");
   document.getElementById("chartPanel").style.display = "none";
@@ -910,7 +1081,12 @@ document.getElementById("navMenu").addEventListener("click", ()=>{
   setActiveNav(willOpen ? "navMenu" : "navToday");
 });
 
-loadState();
+window.addEventListener("pagehide", () => {
+  // This keeps the currently displayed day safe if the tab is closed immediately.
+  persistTasks();
+});
+
+Promise.all([loadState(), loadUiSettings()]);
 </script>
 </body>
 </html>
